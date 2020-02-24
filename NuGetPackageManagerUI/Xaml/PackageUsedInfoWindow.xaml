@@ -1,0 +1,54 @@
+﻿<Window x:Class="NuGetPackageManagerUI.Xaml.PackageUsedInfoWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:NuGetPackageManagerUI.Xaml"
+		xmlns:template="clr-namespace:NuGetPackageManagerUI.Xaml.Template"
+        mc:Ignorable="d"
+        Title="{Binding Title, TargetNullValue='Package Used',FallbackValue='Package Used'}" 
+		Height="450" Width="800" MinHeight="450" MinWidth="800" 
+		WindowStartupLocation="CenterScreen">
+	<Window.DataContext>
+		<local:PackageUsedInfoWindowViewModel />
+	</Window.DataContext>
+
+	<Grid>
+		<Grid.RowDefinitions>
+			<RowDefinition Height="128*"/>
+			<RowDefinition Height="auto"/>
+		</Grid.RowDefinitions>
+
+
+		<ListView x:Name="ListView1"  Style="{DynamicResource ListView}"
+			ItemsSource="{Binding Items, Mode=OneWay}" 
+			ScrollViewer.CanContentScroll="False" 
+			ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.VirtualizationMode="Recycling" Grid.Row="0">
+
+			<ListView.ItemTemplate>
+				<DataTemplate>
+					<template:PackageUsedInfoListItemControl>
+						<FrameworkElement.InputBindings>
+							<MouseBinding MouseAction="LeftDoubleClick" Command="{Binding DataContext.OpenProjectLocationCommand, ElementName=ListView1}" CommandParameter="{Binding ElementName=ListView1, Path=SelectedItem}"/>
+						</FrameworkElement.InputBindings>
+					</template:PackageUsedInfoListItemControl>
+				</DataTemplate>
+			</ListView.ItemTemplate>
+			<ItemsControl.ItemContainerStyle>
+				<Style TargetType="{x:Type ListBoxItem}">
+					<Setter Property="HorizontalAlignment" Value="Stretch" />
+					<Setter Property="HorizontalContentAlignment" Value="Stretch" />
+					<Setter Property="Padding" Value="4" />
+					<Setter Property="Margin" Value="0" />
+				</Style>
+			</ItemsControl.ItemContainerStyle>
+		</ListView>
+
+		<Grid Grid.Row="1" Margin="4,10">
+			<CheckBox Content="Show Project Path" IsChecked="{Binding ShowProjectPath, Mode=TwoWay}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+
+			<TextBlock Text="{Binding Items.Count, StringFormat='({0} count)' }" HorizontalAlignment="Right" Margin="0,0,10,0"/>
+		</Grid>
+
+	</Grid>
+</Window>

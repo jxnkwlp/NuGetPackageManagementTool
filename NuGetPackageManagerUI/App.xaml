@@ -1,0 +1,36 @@
+﻿<Application x:Class="NuGetPackageManagerUI.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:NuGetPackageManagerUI"
+             xmlns:converter="clr-namespace:NuGetPackageManagerUI.Converters"
+             StartupUri="MainWindow.xaml">
+	<Application.Resources>
+		<ResourceDictionary> 
+			<ResourceDictionary.MergedDictionaries>
+				
+				<!-- MahApps.Metro resource dictionaries. Make sure that all file names are Case Sensitive! -->
+				<ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />
+				<ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
+				<ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Colors.xaml" />
+				<!-- Accent and AppTheme setting -->
+				<ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Accents/Blue.xaml" />
+				<ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Accents/BaseLight.xaml" />
+
+				<ResourceDictionary Source="pack://application:,,,/NuGetPackageManagerUI;component/Styles.xaml" />
+			</ResourceDictionary.MergedDictionaries>
+			 
+
+			<BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+			<converter:InvertedBooleanConverter x:Key="InvertedBooleanConverter" />
+			<converter:InvertedBooleanToVisibilityConverter x:Key="InvertedBooleanToVisibilityConverter" />
+			<NullableBoolConverter x:Key="NullableBoolConverter" />
+			<converter:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+			<converter:ZeroToVisibilityConverter x:Key="ZeroToVisibilityConverter" />
+			<converter:InvertedZeroToVisibilityConverter x:Key="InvertedZeroToVisibilityConverter" />
+			<converter:NullToGridHeightConverter x:Key="NullToGridHeightConverter" />
+			<converter:NumberHumanizerConverter x:Key="NumberHumanizerConverter"/>
+
+			<BitmapImage x:Key="DefaultPackageImage" UriSource="default-package-icon.png" />
+		</ResourceDictionary>
+	</Application.Resources>
+</Application>

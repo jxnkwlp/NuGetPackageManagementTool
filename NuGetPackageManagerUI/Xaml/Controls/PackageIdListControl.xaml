@@ -1,0 +1,34 @@
+﻿<UserControl x:Class="NuGetPackageManagerUI.Xaml.Controls.PackageIdListControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:NuGetPackageManagerUI.Xaml.Controls"
+			 xmlns:template="clr-namespace:NuGetPackageManagerUI.Xaml.Template"
+             mc:Ignorable="d" 
+              d:DesignHeight="300" d:DesignWidth="500">
+	<ListView x:Name="PackageIdList"  Style="{DynamicResource ListView}"
+			ItemsSource="{Binding PackageList, Mode=OneWay, IsAsync=True}" 
+			ScrollViewer.CanContentScroll="False" 
+			ScrollViewer.HorizontalScrollBarVisibility="Disabled" 
+
+			VirtualizingPanel.VirtualizationMode="Recycling" 
+			VirtualizingPanel.CacheLength="1,2" 
+			VirtualizingPanel.CacheLengthUnit="Page" 
+			VirtualizingPanel.IsVirtualizing="True" >
+
+		<ListView.ItemTemplate>
+			<DataTemplate>
+				<template:PackageIdListItemControl />
+			</DataTemplate>
+		</ListView.ItemTemplate>
+		<ItemsControl.ItemContainerStyle>
+			<Style TargetType="{x:Type ListBoxItem}">
+				<Setter Property="HorizontalAlignment" Value="Stretch" />
+				<Setter Property="HorizontalContentAlignment" Value="Stretch" />
+				<Setter Property="Padding" Value="2" />
+				<Setter Property="Margin" Value="0" />
+			</Style>
+		</ItemsControl.ItemContainerStyle>
+	</ListView>
+</UserControl>

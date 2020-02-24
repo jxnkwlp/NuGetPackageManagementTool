@@ -1,0 +1,58 @@
+﻿<UserControl x:Class="NuGetPackageManagerUI.Xaml.Controls.ProjectListControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:NuGetPackageManagerUI.Xaml.Controls"
+			 xmlns:template="clr-namespace:NuGetPackageManagerUI.Xaml.Template"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="500">
+
+	<ListView  x:Name="ProjectList"  Style="{DynamicResource ListView}"
+				ItemsSource="{Binding ProjectList, Mode=OneWay, IsAsync=True}" 
+				ScrollViewer.CanContentScroll="False" 
+			ScrollViewer.HorizontalScrollBarVisibility="Disabled" 
+
+			VirtualizingPanel.VirtualizationMode="Recycling" 
+			VirtualizingPanel.CacheLength="1,2" 
+			VirtualizingPanel.CacheLengthUnit="Page" 
+			VirtualizingPanel.IsVirtualizing="True" >
+		<ListView.ItemTemplate>
+			<DataTemplate>
+				<template:ProjectListItemControl>
+					<FrameworkElement.InputBindings>
+						<MouseBinding MouseAction="LeftDoubleClick" Command="{Binding DataContext.OpenProjectLocationCommand, ElementName=ProjectList}" CommandParameter="{Binding ElementName=ProjectList, Path=SelectedItem}"/>
+					</FrameworkElement.InputBindings>
+					<!--<FrameworkElement.ContextMenu>
+						<ContextMenu DataContext="{Binding RelativeSource={RelativeSource Self}, Path=PlacementTarget.Tag}">
+							<MenuItem Header="Reveal in Explorer" Command="{Binding OpenProjectLocationCommand}"  CommandParameter="{Binding Path=PlacementTarget.TemplatedParent.TemplatedParent.DataContext, 
+                           RelativeSource={RelativeSource Mode=FindAncestor, AncestorType={x:Type ContextMenu}}}"/>
+							<MenuItem Header="Show " />
+						</ContextMenu>
+					</FrameworkElement.ContextMenu>-->
+				</template:ProjectListItemControl>
+			</DataTemplate>
+		</ListView.ItemTemplate>
+
+		<!--<ListView.View>
+			<GridView >
+				<GridView.Columns>
+					<GridViewColumn Width="80">
+						<GridViewColumnHeader>
+							<CheckBox />
+						</GridViewColumnHeader>
+					</GridViewColumn>
+				</GridView.Columns> 
+			</GridView>
+		</ListView.View>-->
+
+		<ItemsControl.ItemContainerStyle>
+			<Style TargetType="{x:Type ListBoxItem}">
+				<Setter Property="HorizontalAlignment" Value="Stretch" />
+				<Setter Property="HorizontalContentAlignment" Value="Stretch" />
+				<Setter Property="Padding" Value="2" />
+				<Setter Property="Margin" Value="0" />
+			</Style>
+		</ItemsControl.ItemContainerStyle>
+	</ListView>
+</UserControl>

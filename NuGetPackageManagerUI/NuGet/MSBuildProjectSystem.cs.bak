@@ -1,0 +1,473 @@
+﻿using NuGet.Commands;
+using NuGet.Common;
+using NuGet.Frameworks;
+using NuGet.PackageManagement.Utility;
+using NuGet.ProjectManagement;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+
+namespace NuGetPackageManagerUI.NuGet
+{
+	public class MSBuildProjectSystem : MSBuildUser, IMSBuildProjectSystem
+	{
+		private const string BinDir = "bin";
+
+		private const string NuGetImportStamp = "NuGetPackageImportStamp";
+
+		private const string TargetName = "EnsureNuGetPackageBuildImports";
+
+		private NuGetFramework _targetFramework;
+
+		public INuGetProjectContext NuGetProjectContext
+		{
+			get;
+			set;
+		}
+
+		public string ProjectFileFullPath
+		{
+			get;
+		}
+
+		public string ProjectFullPath
+		{
+			get;
+		}
+
+		public string ProjectName
+		{
+			get;
+		}
+
+		public string ProjectUniqueName
+		{
+			get;
+		}
+
+		public NuGetFramework TargetFramework
+		{
+			get
+			{
+				if (_targetFramework == null)
+				{
+					var frameworkStrings = MSBuildProjectFrameworkUtility.GetProjectFrameworkStrings(
+						projectFilePath: ProjectFileFullPath,
+						targetFrameworks: GetPropertyValue("TargetFrameworks"),
+						targetFramework: GetPropertyValue("TargetFramework"),
+						targetFrameworkMoniker: GetPropertyValue("TargetFrameworkMoniker"),
+						targetPlatformIdentifier: GetPropertyValue("TargetPlatformIdentifier"),
+						targetPlatformVersion: GetPropertyValue("TargetPlatformVersion"),
+						targetPlatformMinVersion: GetPropertyValue("TargetPlatformMinVersion"));
+
+					// Parse the framework of the project or return unsupported.
+					var frameworks = MSBuildProjectFrameworkUtility.GetProjectFrameworks(frameworkStrings).ToArray();
+
+					if (frameworks.Length > 0)
+					{
+						_targetFramework = frameworks[0];
+					}
+					else
+					{
+						_targetFramework = NuGetFramework.UnsupportedFramework;
+					}
+				}
+
+				return _targetFramework;
+			}
+		}
+
+		private dynamic Project
+		{
+			get;
+		}
+
+		public MSBuildProjectSystem(string msbuildDirectory, string projectFullPath, INuGetProjectContext projectContext)
+		{
+			LoadAssemblies(msbuildDirectory);
+			ProjectFileFullPath = projectFullPath;
+			ProjectFullPath = Path.GetDirectoryName(projectFullPath);
+			ProjectName = Path.GetFileNameWithoutExtension(projectFullPath);
+			ProjectUniqueName = projectFullPath;
+			NuGetProjectContext = projectContext;
+			Project = GetProject(projectFullPath);
+		}
+
+		public void AddBindingRedirects()
+		{
+		}
+
+		public void AddExistingFile(string path)
+		{
+			var fullPath = Path.Combine(ProjectFullPath, path);
+
+			if (!File.Exists(fullPath))
+			{
+				throw new ArgumentNullException("PathToExistingFileNotPresent");
+			}
+
+			AddFileCoreAsync(path, () =>
+			{
+				if (NuGetProjectContext.ResolveFileConflict("") == FileConflictAction.Overwrite)
+				{
+				}
+			});
+		}
+
+		public void AddFile(string path, Stream stream)
+		{
+			AddFileCoreAsync(path, () =>
+			{
+				FileSystemUtility.AddFile(ProjectFullPath, path, stream, NuGetProjectContext);
+			});
+		}
+
+		public void AddFileCoreAsync(string path, Action addFile)
+		{
+			if (string.IsNullOrEmpty(path))
+			{
+				return;
+			}
+
+			bool fileExistsInProject = FileExistsInProject(path);
+
+			string fileName = Path.GetFileName(path);
+
+			dynamic lockFileFullPath = PackagesConfigLockFileUtility.GetPackagesLockFilePath(ProjectFullPath, GetPropertyValue("NuGetLockFilePath")?.ToString(), ProjectName);
+			if (File.Exists(Path.Combine(ProjectFullPath, path)) && !fileExistsInProject && !fileName.Equals(Constants.PackageReferenceFile) && !fileName.Equals("packages." + ProjectName + ".config") && !fileName.Equals("web.config") && !fileName.Equals("app.config") && !fileName.Equals(Path.GetFileName(lockFileFullPath)))
+			{
+				NuGetProjectContext.Log(MessageLevel.Warning, "File already exists", path);
+				return;
+			}
+
+			addFile();
+
+			if (!fileExistsInProject)
+			{
+				AddFileToProject(path);
+			}
+		}
+
+		public Task AddFrameworkReferenceAsync(string name, string packageId)
+		{
+			return Task.FromResult(0);
+		}
+
+		public void AddImport(string targetFullPath, ImportLocation location)
+		{
+			if (targetFullPath == null)
+			{
+				throw new ArgumentNullException("targetFullPath");
+			}
+			string targetRelativePath = PathUtility.GetRelativePath(PathUtility.EnsureTrailingSlash(ProjectFullPath), targetFullPath);
+			dynamic imports = Project.Xml.Imports;
+			bool notImported = true;
+			if (imports != null)
+			{
+				foreach (dynamic import in imports)
+				{
+					if (targetRelativePath.Equals(import.Project, StringComparison.OrdinalIgnoreCase))
+					{
+						notImported = false;
+						break;
+					}
+				}
+			}
+			else
+			{
+				notImported = true;
+			}
+			if (notImported)
+			{
+				dynamic pie = Project.Xml.AddImport(targetRelativePath);
+				pie.Condition = "Exists('" + targetRelativePath + "')";
+				if (location == ImportLocation.Top)
+				{
+					pie.Parent.RemoveChild(pie);
+					Project.Xml.InsertBeforeChild(pie, Project.Xml.FirstChild);
+				}
+				AddEnsureImportedTarget(targetRelativePath);
+				Project.ReevaluateIfNecessary();
+			}
+		}
+
+		public Task AddReferenceAsync(string referencePath)
+		{
+			string fullPath = PathUtility.GetAbsolutePath(ProjectFullPath, referencePath);
+			dynamic relativePath = PathUtility.GetRelativePath(Project.FullPath, fullPath);
+			string assemblyFileName = Path.GetFileNameWithoutExtension(fullPath);
+			try
+			{
+				AssemblyName assemblyName = AssemblyName.GetAssemblyName(fullPath);
+				assemblyFileName = assemblyName.FullName;
+			}
+			catch (Exception)
+			{
+			}
+			Project.AddItem("Reference", assemblyFileName, new KeyValuePair<string, string>[2]
+			{
+				new KeyValuePair<string, string>("HintPath", relativePath),
+				new KeyValuePair<string, string>("Private", "True")
+			});
+			return Task.FromResult(0);
+		}
+
+		public Task BeginProcessingAsync()
+		{
+			return Task.FromResult(0);
+		}
+
+		public void DeleteDirectory(string path, bool recursive)
+		{
+			FileSystemUtility.DeleteDirectory(path, recursive, NuGetProjectContext);
+		}
+
+		public async Task EndProcessingAsync()
+		{
+			Debug.WriteLine("EndProcessingAsync save document action.");
+			await SaveAsync();
+		}
+
+		public bool FileExistsInProject(string path)
+		{ 
+			foreach (dynamic item in Project.Items)
+			{
+				foreach (dynamic i in item.Value)
+				{
+					if (i.EvaluatedInclude.Equals(path, StringComparison.OrdinalIgnoreCase) && (string.IsNullOrEmpty(i.ItemType) || i.ItemType[0] != '_'))
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		public IEnumerable<string> GetDirectories(string path)
+		{
+			path = Path.Combine(ProjectFullPath, path);
+			return Directory.EnumerateDirectories(path);
+		}
+
+		public IEnumerable<string> GetFiles(string path, string filter, bool recursive)
+		{
+			path = Path.Combine(ProjectFullPath, path);
+			return Directory.EnumerateFiles(path, filter, recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+		}
+
+		public IEnumerable<string> GetFullPaths(string fileName)
+		{
+			foreach (dynamic projectItem in Project.Items)
+			{
+				dynamic itemFileName = Path.GetFileName(projectItem.EvaluatedInclude);
+				if (string.Equals(fileName, itemFileName, StringComparison.OrdinalIgnoreCase))
+				{
+					yield return Path.Combine(ProjectFullPath, projectItem.EvaluatedInclude);
+				}
+			}
+		}
+
+		public dynamic GetPropertyValue(string propertyName)
+		{
+			return Project.GetPropertyValue(propertyName);
+		}
+
+		public bool IsSupportedFile(string path)
+		{
+			return true;
+		}
+
+		public Task<bool> ReferenceExistsAsync(string name)
+		{
+			return Task.FromResult(GetReference(name) != null);
+		}
+
+		public void RegisterProcessedFiles(IEnumerable<string> files)
+		{
+		}
+
+		public void RemoveFile(string path)
+		{
+			if (!string.IsNullOrEmpty(path))
+			{
+				dynamic files = Project.GetItemsByEvaluatedInclude(path);
+				if (files != null)
+				{
+					Project.RemoveItems(files);
+					NuGetProjectContext.Log(MessageLevel.Debug, "RemovedFileToProject", path, ProjectName);
+				}
+				string folderPath = Path.GetDirectoryName(path);
+				string fullPath = FileSystemUtility.GetFullPath(ProjectFullPath, path);
+				FileSystemUtility.DeleteFileAndParentDirectoriesIfEmpty(ProjectFullPath, path, NuGetProjectContext);
+			}
+		}
+
+		public void RemoveImport(string targetFullPath)
+		{
+			if (targetFullPath == null)
+			{
+				throw new ArgumentNullException("targetFullPath");
+			}
+			string targetRelativePath = PathUtility.GetPathWithForwardSlashes(PathUtility.GetRelativePath(PathUtility.EnsureTrailingSlash(ProjectFullPath), targetFullPath));
+			if (Project.Xml.Imports != null)
+			{
+				dynamic importElement = null;
+				foreach (dynamic import in Project.Xml.Imports)
+				{
+					dynamic currentPath = PathUtility.GetPathWithForwardSlashes(import.Project);
+					if (StringComparer.OrdinalIgnoreCase.Equals(targetRelativePath, currentPath))
+					{
+						importElement = import;
+						break;
+					}
+				}
+				if (importElement != null)
+				{
+					importElement.Parent.RemoveChild(importElement);
+					RemoveEnsureImportedTarget(targetRelativePath);
+					Project.ReevaluateIfNecessary();
+				}
+			}
+		}
+
+		public Task RemoveReferenceAsync(string name)
+		{
+			dynamic assemblyReference = GetReference(name);
+			if (assemblyReference != null)
+			{
+				Project.RemoveItem(assemblyReference);
+			}
+			return Task.FromResult(0);
+		}
+
+		public string ResolvePath(string path)
+		{
+			return path;
+		}
+
+		public async Task SaveAsync()
+		{
+			Project.Save();
+			await Task.Delay(50);
+		}
+
+		protected virtual void AddFileToProject(string path)
+		{
+			if (!ExcludeFile(path))
+			{
+				NuGetProjectContext.Log(MessageLevel.Debug, "AddedFileToProject", path, ProjectName);
+			}
+		}
+
+		protected virtual bool ExcludeFile(string path)
+		{
+			if (string.IsNullOrEmpty(path))
+			{
+				return true;
+			}
+			return Path.GetDirectoryName(path).Equals("bin", StringComparison.OrdinalIgnoreCase);
+		}
+
+		private void AddEnsureImportedTarget(string targetsPath)
+		{
+			dynamic targetElement = null;
+			foreach (dynamic target in Project.Xml.Targets)
+			{
+				if (target.Name.Equals("EnsureNuGetPackageBuildImports", StringComparison.OrdinalIgnoreCase))
+				{
+					targetElement = target;
+					break;
+				}
+			}
+			if (targetElement == null)
+			{
+				targetElement = Project.Xml.AddTarget("EnsureNuGetPackageBuildImports");
+				targetElement.BeforeTargets = "PrepareForBuild";
+				dynamic propertyGroup = targetElement.AddPropertyGroup();
+				propertyGroup.AddProperty("ErrorText", "This project references NuGet package(s) that are missing on this computer. Enable NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105.The missing file is {0}.");
+			}
+			dynamic errorTask = targetElement.AddTask("Error");
+			errorTask.Condition = "!Exists('" + targetsPath + "')";
+			string errorText = string.Format(CultureInfo.InvariantCulture, "$([System.String]::Format('$(ErrorText)', '{0}'))", targetsPath);
+			errorTask.SetParameter("Text", errorText);
+		}
+
+		private IEnumerable<dynamic> GetItems(string itemType, string name)
+		{
+			foreach (dynamic i in Project.GetItems(itemType))
+			{
+				if (i.EvaluatedInclude.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+				{
+					yield return i;
+				}
+			}
+		}
+
+		private dynamic GetProject(string projectFile)
+		{
+			AppDomain.CurrentDomain.AssemblyResolve += base.AssemblyResolve;
+			try
+			{
+				dynamic globalProjectCollection = _projectCollectionType.GetProperty("GlobalProjectCollection").GetMethod.Invoke(null, new object[0]);
+				dynamic loadedProjects = globalProjectCollection.GetLoadedProjects(projectFile);
+				if (loadedProjects.Count > 0)
+				{
+					return loadedProjects[0];
+				}
+				return Activator.CreateInstance(_projectType, projectFile);
+			}
+			finally
+			{
+				AppDomain.CurrentDomain.AssemblyResolve -= base.AssemblyResolve;
+			}
+		}
+
+		private dynamic GetReference(string name)
+		{
+			name = Path.GetFileNameWithoutExtension(name);
+			return GetItems("Reference", name).FirstOrDefault((dynamic item) => new AssemblyName(item.EvaluatedInclude).Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+		}
+
+		private void RemoveEnsureImportedTarget(string targetsPath)
+		{
+			dynamic targetElement = null;
+			foreach (dynamic target in Project.Xml.Targets)
+			{
+				if (string.Equals(target.Name, "EnsureNuGetPackageBuildImports", StringComparison.OrdinalIgnoreCase))
+				{
+					targetElement = target;
+					break;
+				}
+			}
+			if (targetElement == null)
+			{
+				return;
+			}
+			string errorCondition = "!Exists('" + PathUtility.GetPathWithForwardSlashes(targetsPath) + "')";
+			dynamic taskElement = null;
+			foreach (dynamic task in targetElement.Tasks)
+			{
+				dynamic currentCondition = PathUtility.GetPathWithForwardSlashes(task.Condition);
+				if (string.Equals(currentCondition, errorCondition, StringComparison.OrdinalIgnoreCase))
+				{
+					taskElement = task;
+					break;
+				}
+			}
+			if (!((taskElement == null) ? true : false))
+			{
+				taskElement.Parent.RemoveChild(taskElement);
+				if (((ICollection)targetElement.Tasks).Count == 0)
+				{
+					targetElement.Parent.RemoveChild(targetElement);
+				}
+			}
+		}
+	}
+}

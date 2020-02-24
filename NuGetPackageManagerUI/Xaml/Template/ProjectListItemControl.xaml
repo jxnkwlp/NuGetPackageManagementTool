@@ -1,0 +1,34 @@
+﻿<UserControl x:Class="NuGetPackageManagerUI.Xaml.Template.ProjectListItemControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:NuGetPackageManagerUI.Xaml.Template"
+             mc:Ignorable="d" 
+             d:DesignHeight="50" d:DesignWidth="500">
+	<Grid Margin="0">
+		<Grid.ColumnDefinitions>
+			<ColumnDefinition Width="auto"/>
+			<ColumnDefinition Width="*"/>
+		</Grid.ColumnDefinitions>
+		<Grid.RowDefinitions>
+			<RowDefinition Height="auto" />
+			<RowDefinition Height="auto" />
+		</Grid.RowDefinitions>
+
+		<CheckBox Grid.Row="0" Grid.Column="0" IsChecked="{Binding Selected}" VerticalAlignment="Center" Margin="0" />
+
+		<Grid Grid.Row="0" Grid.Column="1" Margin="0,0,0,0" >
+			<StackPanel Orientation="Horizontal" Margin="0">
+				<TextBlock HorizontalAlignment="Left" TextWrapping="Wrap" FontSize="14" MinWidth="20" Margin="0" Text="{Binding Name, TargetNullValue='null package name '}" />
+				<Border BorderThickness="1" CornerRadius="4" Background="#cccccc" Padding="8,0" VerticalAlignment="Center" Margin="4,0,0,0">
+					<TextBlock Text="{Binding PackageCount, FallbackValue=0}" Foreground="White" />
+				</Border>
+			</StackPanel>
+			<TextBlock Margin="0,0,2,0" TextAlignment="Right" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" HorizontalAlignment="Right" MinWidth="60" Text="{Binding FrameworkName}" />
+		</Grid>
+
+		<TextBlock Grid.Row="1" Grid.Column="1" HorizontalAlignment="Left" TextWrapping="Wrap" VerticalAlignment="Top" FontSize="12" Foreground="#FF666666" MinWidth="100" Margin="0" Text="{Binding FullPath}" Grid.ColumnSpan="2" />
+
+	</Grid>
+</UserControl>
