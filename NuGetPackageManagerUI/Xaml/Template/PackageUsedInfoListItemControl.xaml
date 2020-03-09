@@ -18,6 +18,6 @@
 
 		<TextBlock Grid.Column="0" Grid.Row="0" Text="{Binding Project.Name, FallbackValue='project name'}" FontSize="14" TextWrapping="Wrap"/>
 		<TextBlock Grid.Column="0" Grid.Row="1" Text="{Binding Project.FullPath, FallbackValue='project path'}"  TextWrapping="Wrap" Foreground="#666666" Visibility="{Binding DataContext.ShowProjectPath, ElementName=ListView1, Converter={StaticResource BooleanToVisibilityConverter}}" />
-		<TextBlock Grid.Column="1" Grid.Row="0" Text="{Binding Package.Version, StringFormat='v{0}', FallbackValue='package version'}" FontSize="14" />
+		<TextBlock Grid.Column="1" Grid.Row="0" Text="{Binding PackageVersion, StringFormat='v{0}', FallbackValue='package version'}" FontSize="14" />
 	</Grid>
 </UserControl>

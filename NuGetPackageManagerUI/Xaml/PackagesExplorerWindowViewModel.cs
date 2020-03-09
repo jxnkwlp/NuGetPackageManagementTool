@@ -50,8 +50,7 @@ namespace NuGetPackageManagerUI.Xaml
 
 		public override Task InitializeAsync()
 		{
-			var packageService = ProjectService.NuGetPackageService;
-			SourceRepositories.ReplaceRange(packageService.PrimarySourcesRepository.Select(t => t.PackageSource.Name).ToArray());
+			SourceRepositories.ReplaceRange(NuGetPackageService.PrimarySourcesRepository.Select(t => t.PackageSource.Name).ToArray());
 
 			return base.InitializeAsync();
 		}
@@ -95,8 +94,6 @@ namespace NuGetPackageManagerUI.Xaml
 				Packages.Clear();
 			}
 
-			var packageService = ProjectService.NuGetPackageService;
-
 			if (_cancellationToken.IsCancellationRequested)
 				_cancellationToken = new CancellationTokenSource();
 
@@ -107,7 +104,7 @@ namespace NuGetPackageManagerUI.Xaml
 
 				try
 				{
-					var list = await packageService.SearchPackagesAsync(SourceRepositoryName, SearchTerm, _skip, _take, IncludePrerelease, null, _cancellationToken.Token);
+					var list = await NuGetPackageService.SearchPackagesAsync(SourceRepositoryName, SearchTerm, _skip, _take, IncludePrerelease, null, _cancellationToken.Token);
 
 					ShowLoading = false;
 

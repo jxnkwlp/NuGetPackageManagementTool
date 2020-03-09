@@ -1,7 +1,5 @@
-﻿using Microsoft.VisualStudio.Threading;
-using NuGet.Protocol.Core.Types;
+﻿using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
-using NuGetPackageManagerUI.Models;
 using NuGetPackageManagerUI.Services;
 using NuGetPackageManagerUI.Utils;
 using NuGetPackageManagerUI.Xaml;
@@ -48,8 +46,6 @@ namespace NuGetPackageManagerUI
 		public ICommand ShowUsedCommand => new Command<string>((packageId) => ShowUsedWindow(packageId));
 		public ICommand OpenProjectLocationCommand => new Command<ProjectViewModel>((_) => OpenProjectLocation(_));
 		public ICommand CheckAllPackagesCommand => new Command(() => CheckAllPackages());
-
-		public IEnumerable<ProjectWithPackageModel> ProjectWithPackages { get; set; }
 
 		public Action OnSettings { get; set; }
 		public Action OnToggleProjectsSelect { get; set; }
@@ -129,12 +125,15 @@ namespace NuGetPackageManagerUI
 			_checkAllPackageCancellationTokenSource.Cancel();
 
 			// 
-			ProjectService.UpdateSolutionDirectory(SearchPath);
+			SolutionDiretoryManager.OpenDiretory(SearchPath);
 
-			Application.Current.Dispatcher.BeginInvoke(new Action(async () =>
+
+			DispatcherHelper.RunAsync(new Action(async () =>
 			{
 				try
 				{
+					await NuGetPackageService.InitialAsync();
+
 					await LoadProjectsAndPackagesAsync();
 				}
 				catch (Exception ex)
@@ -142,6 +141,7 @@ namespace NuGetPackageManagerUI
 					MessageBox.Show(ex.Message);
 				}
 
+				LogMessage = "";
 				IsBusy = false;
 			}));
 		}
@@ -152,30 +152,41 @@ namespace NuGetPackageManagerUI
 
 			LogMessage = "Search...";
 
-			var projects = await ProjectService.SearchProjectsWithPackagesAsync(SearchPath, true, ProjectService.DefaultProjectTypes);
+			var projectFiles = await SolutionDiretoryManager.GetProjectFilesAsync(true);
 
-			Logger.Log("Find {0} projects.", projects.Count());
+			Logger.Log("Find {0} projects.", projectFiles.Count());
 
-			ProjectService.UpdateSolutionProjects(projects);
+			var solutionManager = SolutionManagerProvider.CreateOrGetSolutionManager();
 
-			ProjectWithPackages = projects;
+			var projectResultList = new List<ProjectViewModel>();
+			var packagesResultList = new List<string>();
 
-			var packages = projects.SelectMany(t => t.Packages).GroupBy(t => t.Id).Select(t => new PackageViewModel()
+			foreach (var projectFile in projectFiles)
 			{
-				Id = t.Key,
-				Versions = t.Select(p => p.Version).Distinct().ToArray(),
-			}).OrderBy(t => t.Id).ToArray();
+				var nuGetProject = await solutionManager.GetNuGetProjectAsync(projectFile);
 
-			PackageList.ReplaceRange(packages);
+				var installedPackages = await nuGetProject.GetInstalledPackagesAsync(default);
 
-			ProjectList.ReplaceRange(projects.Select(t => new ProjectViewModel()
-			{
-				FolderPath = t.FolderPath,
-				FrameworkName = t.FrameworkName,
-				FullPath = t.FullPath,
-				Name = t.Name,
-				PackageCount = t.Packages?.Count() ?? 0,
-			}).OrderBy(t => t.Name).ToArray());
+				var projectAdapter = await ProjectAdapterProvider.GetOrCreateAdapterAsync(projectFile, solutionManager);
+
+				var targetFramework = await projectAdapter.GetTargetFrameworkAsync();
+
+				var projectModel = new ProjectViewModel()
+				{
+					FolderPath = Path.GetDirectoryName(projectFile),
+					FullPath = projectFile,
+					Name = projectAdapter.ProjectName,
+					PackageCount = installedPackages.Count(),
+					FrameworkName = targetFramework.GetShortFolderName(),
+				};
+
+				projectResultList.Add(projectModel);
+
+				packagesResultList.AddRange(installedPackages.Select(t => t.PackageIdentity.Id));
+			}
+
+			ProjectList.ReplaceRange(projectResultList.OrderBy(t => t.Name));
+			PackageList.ReplaceRange(packagesResultList.Distinct().OrderBy(t => t).Select(t => new PackageViewModel() { Id = t }));
 
 			LogMessage = null;
 		}
@@ -202,73 +213,78 @@ namespace NuGetPackageManagerUI
 
 		private void UninstallPackages()
 		{
-			var projects = GetSelectProjects();
-			var packageIds = GetSelectPackages();
+			var selectProjectModels = GetSelectProjects();
+			var selectPackageIds = GetSelectPackages();
 
-
-			if (!projects.Any())
+			if (!selectProjectModels.Any())
 				return;
 
-			string message = $"Are you sure you want to remove all packages from the {projects.Count()} selected projects?";
-			if (packageIds.Any())
-			{
-				message = $"Are you sure you want to remove the selected {packageIds.Count()} packages from the selected {projects.Count()} projects?";
-			}
-			else
-			{
-				packageIds = projects.SelectMany(t => ProjectService.GetProjectPackages(t.FullPath, true)).Select(t => t.Id).ToArray();
-			}
-
-			if (!packageIds.Any())
-			{
-				MessageBox.Show("No packages can be removed.");
-				return;
-			}
+			string message = $"Are you sure you want to remove all packages from the {selectProjectModels.Count()} selected projects?";
 
 			IsBusy = true;
 
 			Application.Current.Dispatcher.BeginInvoke(new Action(async () =>
 			{
-				var selectProjects = projects.Select(t => new ProjectModel()
+				// if package id have choice, mean uninstall those packages.
+				// otherwise , uninstall all packages from projects choice.
+				if (selectPackageIds.Any())
 				{
-					Name = t.Name,
-					FolderPath = t.FolderPath,
-					FullPath = t.FullPath,
-					FrameworkName = t.FrameworkName,
-				}).ToArray();
-
-				if (MessageBox.Show(message, "Confirm", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+					message = $"Are you sure you want to remove the selected {selectPackageIds.Count()} packages from the selected {selectProjectModels.Count()} projects?";
+				}
+				else
 				{
-					if (_cancellationToken.IsCancellationRequested)
-						_cancellationToken = new CancellationTokenSource();
-
-					Stopwatch sw = Stopwatch.StartNew();
-
-					bool success = false;
-					try
+					var packageIds = new List<string>();
+					foreach (var projectViewModel in selectProjectModels)
 					{
-						await ProjectService.UninstallPackagesAsync(selectProjects, packageIds, new UninstallPackagesOptions(), _cancellationToken.Token);
+						var nuGetProject = await SolutionManager.GetNuGetProjectAsync(projectViewModel.FullPath);
 
-						success = true;
-					}
-					catch (Exception ex)
-					{
-						if (!_cancellationToken.IsCancellationRequested)
-							MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-						else
-							Debug.WriteLine("Uninstall packages task is canceled.");
-					}
-					finally
-					{
-						sw.Stop();
-						LogMessage = null;
+						var installedPackages = await nuGetProject.GetInstalledPackagesAsync(default);
+						packageIds.AddRange(installedPackages.Select(t => t.PackageIdentity.Id));
 					}
 
-					if (success)
-					{
-						MessageBox.Show($"Done.({sw.Elapsed})");
+					selectPackageIds = packageIds;
+				}
 
-						await LoadProjectsAndPackagesAsync();
+				if (!selectPackageIds.Any())
+				{
+					await DialogService.ShowMessageBoxAsync("No packages can be removed.", "");
+
+				}
+				else
+				{
+					if (await DialogService.ShowConfirmAsync(message, "Confirm"))
+					{
+						if (_cancellationToken.IsCancellationRequested)
+							_cancellationToken = new CancellationTokenSource();
+
+						Stopwatch sw = Stopwatch.StartNew();
+
+						bool success = false;
+						try
+						{
+							await ProjectService.UninstallPackagesAsync(selectProjectModels.Select(t => t.FullPath), selectPackageIds, new UninstallPackagesOptions(), true, _cancellationToken.Token);
+
+							success = true;
+						}
+						catch (Exception ex)
+						{
+							if (!_cancellationToken.IsCancellationRequested)
+								MessageBox.Show(ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+							else
+								Debug.WriteLine("Uninstall packages task is canceled.");
+						}
+						finally
+						{
+							sw.Stop();
+							LogMessage = null;
+						}
+
+						if (success)
+						{
+							MessageBox.Show($"Done.({sw.Elapsed})");
+
+							await LoadProjectsAndPackagesAsync();
+						}
 					}
 				}
 
@@ -347,7 +363,7 @@ namespace NuGetPackageManagerUI
 		{
 			var tasks = new List<Task>();
 
-			var sourceCacheContext = ProjectService.NuGetPackageService.CreateSourceCacheContext();
+			var sourceCacheContext = NuGetHelper.CreateSourceCacheContext();
 
 			foreach (var item in PackageList)
 			{
@@ -361,7 +377,7 @@ namespace NuGetPackageManagerUI
 		{
 			try
 			{
-				var latestVersion = await ProjectService.NuGetPackageService.GetNuGetLatestVersionAsync(item.Id, sourceCacheContext, true, false, default);
+				var latestVersion = await NuGetPackageService.GetNuGetLatestVersionAsync(item.Id, sourceCacheContext, true, false, default);
 
 				if (latestVersion != null)
 				{
@@ -405,6 +421,8 @@ namespace NuGetPackageManagerUI
 		public string FrameworkName { get => _frameworkName; set => Set(ref _frameworkName, value); }
 		public bool Selected { get => _selected; set => Set(ref _selected, value); }
 		public int PackageCount { get => _packageCount; set => Set(ref _packageCount, value); }
+
+
 	}
 
 	public class PackageViewModel : BaseViewModel

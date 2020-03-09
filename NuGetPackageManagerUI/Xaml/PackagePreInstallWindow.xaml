@@ -52,9 +52,11 @@
 
 			<StackPanel Orientation="Horizontal"  HorizontalAlignment="Right" Margin="10,4" IsEnabled="{Binding IsBusy, Converter={StaticResource InvertedBooleanConverter}}">
 
+				<CheckBox IsChecked="{Binding ContinueOnError}" Content="Continue on error" Margin="3,0"/>
+
 				<Button Content="Use LSV" ToolTip="Latest stable version" Width="65" Margin="3,0" Command="{Binding ChooseLatestStableVersionCommand}"/>
 				<Button Content="Use LV" ToolTip="Latest version" Width="65" Margin="3,0" Command="{Binding ChooseLatestVersionCommand}"/>
-				<Button Content="Use PV" ToolTip="Latest project version" Width="65" Margin="3,0" Command="{Binding ChooseLatestProjectVersionCommand}"/>
+				<Button Content="Use LPV" ToolTip="Latest project version" Width="65" Margin="3,0" Command="{Binding ChooseLatestProjectVersionCommand}"/>
 
 				<Button Content="Ok" Width="50" Margin="15,0,0,0" Command="{Binding SubmitCommand}"/>
 			</StackPanel>

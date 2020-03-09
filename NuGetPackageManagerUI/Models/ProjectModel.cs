@@ -1,11 +1,13 @@
 ﻿using NuGet.Frameworks;
+using NuGet.Packaging.Core;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 
 namespace NuGetPackageManagerUI.Models
 {
-	[DebuggerDisplay("Name:{Name} FolderPath:{FolderPath} FrameworkName:{FrameworkName}")]
+	[DebuggerDisplay("{ToString()}")]
 	public class ProjectModel : IEquatable<ProjectModel>
 	{
 		public string Name { get; set; }
@@ -16,7 +18,12 @@ namespace NuGetPackageManagerUI.Models
 
 		public string FrameworkName { get; set; }
 
-		public NuGetFramework Framework { get; set; }
+		public IEnumerable<PackageModel> Packages { get; set; } = Enumerable.Empty<PackageModel>();
+
+		public override string ToString()
+		{
+			return $"{Name}, [{FrameworkName}] [{FullPath}]";
+		}
 
 		public override bool Equals(object obj)
 		{

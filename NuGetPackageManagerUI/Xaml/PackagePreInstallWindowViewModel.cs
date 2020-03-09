@@ -1,6 +1,7 @@
-﻿using NuGet.Versioning;
-using NuGetPackageManagerUI.Models;
+﻿using NuGet.Packaging.Core;
+using NuGet.Versioning;
 using NuGetPackageManagerUI.Services;
+using NuGetPackageManagerUI.Services.NuGets;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -22,8 +23,10 @@ namespace NuGetPackageManagerUI.Xaml
 
 		private CancellationTokenSource _cancellationToken = new CancellationTokenSource();
 		private bool _canAddPackage;
+		private bool _continueOnError;
 
 		public bool IncludePrerelease { get => _includePrerelease; set => Set(ref _includePrerelease, value); }
+		public bool ContinueOnError { get => _continueOnError; set => Set(ref _continueOnError, value); }
 		public string LogMessage { get => _logMessage; set => Set(ref _logMessage, value); }
 		public int PercentageValue { get => _percentageValue; set => Set(ref _percentageValue, value); }
 		public bool CanAddPackage { get => _canAddPackage; set => Set(ref _canAddPackage, value); }
@@ -32,10 +35,7 @@ namespace NuGetPackageManagerUI.Xaml
 
 
 		public bool ShowUsage { get; set; }
-
 		public bool IsUpdateMode { get; set; }
-
-		public IEnumerable<ProjectWithPackageModel> ProjectWithPackages => _parentViewModel.ProjectWithPackages;
 
 		public ICommand ToggleIncludePrereleaseCommand => new Command(() => { });
 		public ICommand ToggleIncludePrereleaseChangeCommand => new Command<bool>((value) => ToggleIncludePrereleaseChange(value));
@@ -102,7 +102,7 @@ namespace NuGetPackageManagerUI.Xaml
 		{
 			CanAddPackage = !IsUpdateMode;
 
-			InitPackages();
+			InitPackagesAsync();
 
 			await Task.Delay(1000);
 
@@ -168,26 +168,18 @@ namespace NuGetPackageManagerUI.Xaml
 
 		private async Task<(bool, Exception)> InstallPackagesAsync()
 		{
-			var projects = _parentViewModel.GetSelectProjects().Select(t => new ProjectModel()
-			{
-				Name = t.Name,
-				FolderPath = t.FolderPath,
-				FullPath = t.FullPath,
-				FrameworkName = t.FrameworkName,
-			}).ToArray();
+			var selectProjects = _parentViewModel.GetSelectProjects();
 
-			var packages = Packages.Select(t => new PackageModel()
-			{
-				Id = t.Id,
-				Version = t.Version,
-			}).ToArray();
+			var packages = Packages.Select(t => new PackageIdentity(t.Id, NuGetVersion.Parse(t.Version))).ToArray();
 
 			bool success = false;
 			Exception exception = null;
 
+			var shouldThrow = ContinueOnError ? false : true;
+
 			try
 			{
-				await ProjectService.InstallPackagesAsync(projects, packages, new InstallPackagesOptions() { IgnoreDependencies = false, IncludePrerelease = true, }, _cancellationToken.Token);
+				await ProjectService.InstallPackagesAsync(selectProjects.Select(t => t.FullPath), packages, new InstallPackagesOptions() { IgnoreDependencies = false, IncludePrerelease = true, }, shouldThrow, _cancellationToken.Token);
 
 				success = true;
 			}
@@ -201,41 +193,27 @@ namespace NuGetPackageManagerUI.Xaml
 
 		private async Task<(bool, Exception)> UpdatePackagesAsync()
 		{
-			IEnumerable<ProjectModel> projects = null;
+			IEnumerable<string> projectFiles = null;
 
 			if (_parentViewModel.GetSelectProjects().Any())
 			{
-				projects = _parentViewModel.GetSelectProjects().Select(t => new ProjectModel()
-				{
-					Name = t.Name,
-					FolderPath = t.FolderPath,
-					FullPath = t.FullPath,
-					FrameworkName = t.FrameworkName,
-				}).ToArray();
+				projectFiles = _parentViewModel.GetSelectProjects().Select(t => t.FullPath).ToArray();
 			}
 			else
 			{
-				projects = _parentViewModel.ProjectList.Select(t => new ProjectModel()
-				{
-					Name = t.Name,
-					FolderPath = t.FolderPath,
-					FullPath = t.FullPath,
-					FrameworkName = t.FrameworkName,
-				}).ToArray();
+				projectFiles = _parentViewModel.ProjectList.Select(t => t.FullPath).ToArray();
 			}
 
-			var packages = Packages.Select(t => new PackageModel()
-			{
-				Id = t.Id,
-				Version = t.Version,
-			}).ToArray();
+			var packages = Packages.Select(t => new PackageIdentity(t.Id, NuGetVersion.Parse(t.Version))).ToArray();
 
 			bool success = false;
 			Exception exception = null;
 
+			var shouldThrow = ContinueOnError ? false : true;
+
 			try
 			{
-				await ProjectService.UpdatePackagesAsync(projects, packages, new UpdatePackagesOptions(), _cancellationToken.Token);
+				await ProjectService.UpdatePackagesAsync(projectFiles, packages, new UpdatePackagesOptions(), shouldThrow, _cancellationToken.Token);
 
 				success = true;
 			}
@@ -269,11 +247,11 @@ namespace NuGetPackageManagerUI.Xaml
 			IsBusy = false;
 		}
 
-		private void InitPackages()
+		private async Task InitPackagesAsync()
 		{
 			if (IsUpdateMode)
 			{
-				var projects = _parentViewModel.GetSelectProjects();
+				var selectProjects = _parentViewModel.GetSelectProjects();
 				IEnumerable<string> packageIds;
 
 				if (_parentViewModel.GetSelectPackages().Any())
@@ -282,22 +260,25 @@ namespace NuGetPackageManagerUI.Xaml
 				}
 				else
 				{
-					packageIds = _parentViewModel.ProjectWithPackages.Where(t => projects.Any(p => p.FullPath == t.FullPath)).SelectMany(t => t.Packages.Select(c => c.Id));
+					var installedPackages = await GetInstalledPackagesFromProjectFilesAsync(selectProjects.Select(t => t.FullPath));
+					packageIds = installedPackages.Select(t => t.Id).Distinct().ToArray();
 				}
 
 				if (!packageIds.Any())
 				{
-					if (MessageBox.Show("No packages!", "Notice", MessageBoxButton.OK, MessageBoxImage.Information) == MessageBoxResult.OK)
+					if (await DialogService.ShowMessageBoxAsync("No packages!", "Notice"))
 					{
 						CloseWindow();
 					}
 					return;
 				}
+
 				InitPackagesCore(packageIds);
 			}
 			else
 			{
 				var packageIds = _parentViewModel.GetSelectPackages();
+
 				InitPackagesCore(packageIds);
 			}
 		}
@@ -322,14 +303,15 @@ namespace NuGetPackageManagerUI.Xaml
 
 			LogMessage = $"Loading package '{package.Id}' ";
 
-			var used = GetPackageUsage(ProjectWithPackages, package.Id);
+			var installedVersion = await GetInstalledPackagesVersionsAsync(package.Id);
 
 			if (_cancellationToken.IsCancellationRequested)
 				_cancellationToken = new CancellationTokenSource();
 
 			try
 			{
-				var allVerions = await ProjectService.NuGetPackageService.GetNuGetVersionsAsync(package.Id, _cancellationToken.Token);
+				var allVerions = await NuGetPackageService.GetNuGetVersionsAsync(package.Id, _cancellationToken.Token);
+
 				if (!IncludePrerelease)
 					allVerions = allVerions.Where(t => !t.IsPrerelease);
 
@@ -344,8 +326,8 @@ namespace NuGetPackageManagerUI.Xaml
 					package.Version = allVerions.First().ToNormalizedString();
 				}
 
-				if (used.Any())
-					package.LatestInstalledVersion = used.Values.Select(t => NuGetVersion.Parse(t.Version)).OrderByDescending(t => t).First().ToNormalizedString();
+				if (installedVersion.Any())
+					package.LatestInstalledVersion = installedVersion.Values.OrderByDescending(t => t).First().Version.ToNormalizedString();
 			}
 			catch (Exception ex)
 			{
@@ -356,7 +338,7 @@ namespace NuGetPackageManagerUI.Xaml
 			//   
 			if (package.EnableUsage)
 			{
-				package.UsageText = FormatUsage(used);
+				package.UsageText = FormatInstalledPackages(installedVersion);
 			}
 
 			package.IsBusy = false;
@@ -406,18 +388,32 @@ namespace NuGetPackageManagerUI.Xaml
 			}));
 		}
 
-		public static string FormatUsage(Dictionary<ProjectModel, PackageModel> used)
+		public static string FormatInstalledPackages(Dictionary<string, PackageIdentity> installed)
 		{
-			if (used.Any())
-				return string.Join(Environment.NewLine, used.Select(t => $"{t.Key.Name}: {t.Value.Version}"));
+			if (installed.Any())
+				return string.Join(Environment.NewLine, installed.Select(t => $"{t.Key}: {t.Value.Version}"));
 			return null;
 		}
 
-		public static Dictionary<ProjectModel, PackageModel> GetPackageUsage(IEnumerable<ProjectWithPackageModel> source, string packageId)
+		public async Task<Dictionary<string, PackageIdentity>> GetInstalledPackagesVersionsAsync(string packageId)
 		{
-			var find = source.Where(t => t.Packages.Any(p => p.Id.Equals(packageId, StringComparison.InvariantCultureIgnoreCase))).Select(t => new { Project = t, Package = t.Packages.FirstOrDefault(p => p.Id.Equals(packageId, StringComparison.InvariantCultureIgnoreCase)) });
+			var projectFiles = await SolutionDiretoryManager.GetProjectFilesAsync();
 
-			return find.ToDictionary(t => (ProjectModel)t.Project, t => t.Package);
+			var result = new Dictionary<string, PackageIdentity>();
+
+			foreach (var item in projectFiles)
+			{
+				var nuGetProject = await SolutionManager.GetNuGetProjectAsync(item);
+				var packages = await GetInstalledPackagesFromProjectFileAsync(item);
+
+				if (packages.Any(t => string.Equals(t.Id, packageId, StringComparison.InvariantCultureIgnoreCase)))
+				{
+					var pack = packages.First(t => string.Equals(t.Id, packageId, StringComparison.InvariantCultureIgnoreCase));
+					result[nuGetProject.GetProjectName()] = pack;
+				}
+			}
+
+			return result;
 		}
 
 		public override void OnWindowsClosing()

@@ -1,4 +1,5 @@
 ﻿using NuGetPackageManagerUI.Models;
+using NuGetPackageManagerUI.Services;
 using NuGetPackageManagerUI.Utils;
 using System;
 using System.Diagnostics;
@@ -33,28 +34,24 @@ namespace NuGetPackageManagerUI.Xaml
 			this.Title = $"Package used - {packageId}";
 		}
 
-		public override Task InitializeAsync()
+		public override async Task InitializeAsync()
 		{
-			var projects = _parentViewModel.ProjectWithPackages.Where(t => t.Packages.Any(p => p.Id.Equals(_packageId, StringComparison.InvariantCultureIgnoreCase)));
+			var projectFiles = await SolutionDiretoryManager.GetProjectFilesAsync();
+			var installedPackages = await GetInstalledPackagesFromProjectFilesAsync2(projectFiles);
 
-			var list = projects.Select(t => new ProjectPackageUsedItemViewModel()
+			var installedPackages2 = installedPackages.Where(t => t.Value.Any(p => string.Equals(p.Id, _packageId, StringComparison.InvariantCultureIgnoreCase)));
+
+			var list = installedPackages2.Select(t => new ProjectPackageUsedItemViewModel()
 			{
-				Project = new ProjectModel()
-				{
-					Name = t.Name,
-					FullPath = t.FullPath,
-					FolderPath = t.FolderPath,
-					FrameworkName = t.FrameworkName,
-				},
+				Project = t.Key.ToProjectModel(),
 
-				Package = t.Packages.FirstOrDefault(p => p.Id.Equals(_packageId, StringComparison.InvariantCultureIgnoreCase)),
+				PackageVersion = t.Value.FirstOrDefault(p => p.Id.Equals(_packageId, StringComparison.InvariantCultureIgnoreCase))?.Version.ToNormalizedString(),
 			});
 
-			var orderList = list.OrderByDescending(t => t.Package.Version, new PackageVesionStringComparer()).ThenBy(t => t.Project.Name).ToArray();
+			var orderList = list.OrderByDescending(t => t.PackageVersion, new PackageVesionStringComparer()).ThenBy(t => t.Project.Name).ToArray();
 
 			Items.ReplaceRange(orderList);
 
-			return Task.CompletedTask;
 		}
 
 		private void OpenProjectLocation(ProjectPackageUsedItemViewModel item)
@@ -66,6 +63,6 @@ namespace NuGetPackageManagerUI.Xaml
 	public class ProjectPackageUsedItemViewModel : BaseViewModel
 	{
 		public ProjectModel Project { get; set; }
-		public PackageModel Package { get; set; }
+		public string PackageVersion { get; set; }
 	}
 }

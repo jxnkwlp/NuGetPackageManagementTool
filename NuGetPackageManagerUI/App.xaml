@@ -31,6 +31,8 @@
 			<converter:NumberHumanizerConverter x:Key="NumberHumanizerConverter"/>
 
 			<BitmapImage x:Key="DefaultPackageImage" UriSource="default-package-icon.png" />
+
+			<!--<vm:ViewModelLocator x:Key="Locator" d:IsDataSource="True" xmlns:vm="clr-namespace:NuGetPackageManagerUI.ViewModel" />-->
 		</ResourceDictionary>
 	</Application.Resources>
 </Application>

@@ -1,207 +1,38 @@
-﻿using NuGet.Frameworks;
-using NuGetPackageManagerUI.Models;
-using NuGetPackageManagerUI.NuGet;
+﻿using NuGet.PackageManagement;
+using NuGet.Packaging.Core;
+using NuGet.ProjectManagement;
+using NuGetPackageManagerUI.Services.NuGets;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Xml.Linq;
 
 namespace NuGetPackageManagerUI.Services
 {
-	public class ProjectService
+	public class ProjectService : IProjectService
 	{
-		private string _solutionDiretory;
-		private IEnumerable<ProjectModel> _projects = Enumerable.Empty<ProjectModel>();
-		private NuGetPackageService _nuGetPackageService;
-		private MySolutionManager _mySolutionManager;
-
-
-		[Obsolete]
-		public static string MsbuildDirectory { get; set; }
-
-		public NuGetPackageService NuGetPackageService
-		{
-			get
-			{
-				if (_nuGetPackageService == null)
-				{
-					CreateNuGetPackageService();
-				}
-				return _nuGetPackageService;
-			}
-		}
+		private readonly INuGetPackageService _nuGetPackageService;
+		private readonly ISolutionDiretoryManager _solutionDiretoryManager;
+		private readonly ISolutionManagerProvider _solutionManagerProvider;
 
 		public event Action<string, string> PackageInstalling;
 		public event Action<string, string> PackageInstalled;
 		public event Action<string> PackageUninstalling;
 		public event Action<string> PackageUninstalled;
 
-		public ProjectService()
+		public ISolutionManager SolutionManager => _solutionManagerProvider.CreateOrGetSolutionManager();
+
+		public ProjectService(INuGetPackageService nuGetPackageService, ISolutionDiretoryManager solutionDiretoryManager, ISolutionManagerProvider solutionManagerProvider)
 		{
+			_nuGetPackageService = nuGetPackageService;
+			_solutionDiretoryManager = solutionDiretoryManager;
+			_solutionManagerProvider = solutionManagerProvider;
+
+			InitialEvents();
 		}
 
-
-		#region static
-
-		public static IEnumerable<string> DefaultProjectTypes => new[] { "csproj" };
-
-		public static async Task<IEnumerable<ProjectWithPackageModel>> SearchProjectsWithPackagesAsync(string directory, bool subDirectories, IEnumerable<string> projectTypes)
-		{
-			var projects = await SearchProjectsAsync(directory, subDirectories, projectTypes);
-
-			return projects.Select(t => new ProjectWithPackageModel()
-			{
-				FolderPath = t.FolderPath,
-				Framework = t.Framework,
-				FrameworkName = t.FrameworkName,
-				FullPath = t.FullPath,
-				Name = t.Name,
-
-				Packages = GetProjectPackages(t.FullPath, true),
-			}).ToArray();
-		}
-
-		public static Task<IEnumerable<ProjectModel>> SearchProjectsAsync(string directory, bool subDirectories, IEnumerable<string> projectTypes)
-		{
-			if (projectTypes == null)
-				throw new ArgumentNullException(nameof(projectTypes));
-
-			if (string.IsNullOrWhiteSpace(directory))
-			{
-				throw new ArgumentNullException(nameof(directory));
-			}
-
-			return Task.Run(() =>
-			{
-				if (!Directory.Exists(directory)) return Enumerable.Empty<ProjectModel>();
-
-				var projectFiles = projectTypes.SelectMany(t => Directory.GetFiles(directory, $"*.{t}", subDirectories ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly));
-
-				return projectFiles.Select(t =>
-				{
-					var model = new ProjectModel()
-					{
-						FolderPath = Path.GetDirectoryName(t),
-						Name = Path.GetFileNameWithoutExtension(t),
-						FullPath = t,
-						Framework = GetProjectNuGetFramework(t),
-					};
-					model.FrameworkName = model.Framework?.GetShortFolderName();
-					return model;
-				}).ToArray();
-			});
-		}
-
-		public static NuGetFramework GetProjectNuGetFramework(string fullPath)
-		{
-			if (string.IsNullOrWhiteSpace(fullPath))
-			{
-				throw new ArgumentNullException(nameof(fullPath));
-			}
-
-			XDocument doc = XDocument.Load(fullPath);
-			XNamespace ns = doc.Root.Name.Namespace;
-			// for .net framework
-			XElement element = doc.Root.Elements(XName.Get("PropertyGroup", ns.NamespaceName)).Elements(XName.Get("TargetFrameworkVersion", ns.NamespaceName)).FirstOrDefault();
-			if (element != null)
-			{
-				return new NuGetFramework(".NETFramework", new Version(element.Value.Substring(1)));
-			}
-
-			// for net core
-			element = doc.Root.Elements(XName.Get("PropertyGroup", ns.NamespaceName)).Elements(XName.Get("TargetFramework", ns.NamespaceName)).FirstOrDefault();
-			if (element != null)
-			{
-				return new NuGetFramework(element.Value);
-			}
-
-			// TODO more frameworks
-			//
-			return NuGetFramework.AnyFramework;
-		}
-
-		public static IEnumerable<PackageModel> GetProjectPackages(string fullPath, bool isPackageConfigFile)
-		{
-			if (!isPackageConfigFile)
-			{
-				// TODO 
-				return Enumerable.Empty<PackageModel>();
-			}
-
-			string configFile = Path.Combine(Path.GetDirectoryName(fullPath), "packages.config");
-			return GetProjectPackagesFromConfigFile(configFile);
-		}
-
-		public static IEnumerable<PackageInstalledModel> GetProjectPackagesFromConfigFile(string configFile)
-		{
-			if (!File.Exists(configFile))
-			{
-				return Enumerable.Empty<PackageInstalledModel>();
-			}
-
-			XDocument doc = XDocument.Load(configFile);
-			return (from t in doc.Root.Elements()
-					select new PackageInstalledModel
-					{
-						Id = t.Attribute("id").Value,
-						Version = t.Attribute("version").Value,
-						TargetFramework = t.Attribute("targetFramework")?.Value
-					} into t
-					orderby t.Id
-					select t).ToArray();
-		}
-
-		#endregion
-
-
-		public Task InstallPackagesAsync(IEnumerable<ProjectModel> projects, IEnumerable<PackageModel> packages, InstallPackagesOptions options, CancellationToken token)
-		{
-			return Task.Run(async () =>
-			{
-				await _nuGetPackageService.InstallAsync(projects, packages, options.IncludePrerelease, options.IgnoreDependencies, token);
-			});
-		}
-
-		public Task UpdatePackagesAsync(IEnumerable<ProjectModel> projects, IEnumerable<PackageModel> packages, UpdatePackagesOptions options, CancellationToken token)
-		{
-			return Task.Run(async () =>
-			{
-				await _nuGetPackageService.UpdateAsync(projects, packages, token);
-			});
-		}
-
-		public Task UninstallPackagesAsync(IEnumerable<ProjectModel> projects, IEnumerable<string> packageIds, UninstallPackagesOptions options, CancellationToken token)
-		{
-			return Task.Run(async () =>
-			{
-				await _nuGetPackageService.UninstallAsync(projects, packageIds, options.RemoveDependencies, options.FocusRemove, token);
-			});
-		}
-
-		// step1
-		public void UpdateSolutionDirectory(string solutionDiretory)
-		{
-			if (string.IsNullOrWhiteSpace(solutionDiretory))
-			{
-				throw new ArgumentNullException(nameof(solutionDiretory));
-			}
-
-			_solutionDiretory = solutionDiretory;
-
-			CreateNuGetPackageService();
-		}
-
-		// step2
-		public void UpdateSolutionProjects(IEnumerable<ProjectModel> projects)
-		{
-			_projects = projects;
-			_mySolutionManager.UpdateProjects(_projects);
-		}
-
-		protected void CreateNuGetPackageService()
+		private void InitialEvents()
 		{
 			if (_nuGetPackageService != null)
 			{
@@ -211,14 +42,54 @@ namespace NuGetPackageManagerUI.Services
 				_nuGetPackageService.PackageUninstalling -= NuGetPackageUninstalling;
 			}
 
-			var nuGetLogger = ServiceLocator.GetService<global::NuGet.Common.ILogger>();
-			_mySolutionManager = new MySolutionManager(_solutionDiretory, MsbuildDirectory);
-			_nuGetPackageService = new NuGetPackageService(_mySolutionManager, nuGetLogger);
-
 			_nuGetPackageService.PackageInstalled += NuGetPackageInstalled;
 			_nuGetPackageService.PackageInstalling += NuGetPackageInstalling;
 			_nuGetPackageService.PackageUninstalled += NuGetPackageUninstalled;
 			_nuGetPackageService.PackageUninstalling += NuGetPackageUninstalling;
+		}
+
+		public async Task InstallPackagesAsync(IEnumerable<string> projects, IEnumerable<PackageIdentity> packages, InstallPackagesOptions options, bool shouldThrow, CancellationToken token)
+		{
+			var nuGetProjects = new List<NuGetProject>();
+			foreach (var item in projects)
+			{
+				var nuGetProject = await SolutionManager.GetNuGetProjectAsync(item);
+
+				nuGetProjects.Add(nuGetProject);
+			}
+
+			await _nuGetPackageService.InstallAsync(nuGetProjects, packages, options.IncludePrerelease, options.IgnoreDependencies, shouldThrow, token);
+		}
+
+		public async Task UpdatePackagesAsync(IEnumerable<string> projects, IEnumerable<PackageIdentity> packages, UpdatePackagesOptions options, bool shouldThrow, CancellationToken token)
+		{
+			var nuGetProjects = new List<NuGetProject>();
+			foreach (var item in projects)
+			{
+				var nuGetProject = await SolutionManager.GetNuGetProjectAsync(item);
+
+				nuGetProjects.Add(nuGetProject);
+			}
+
+			await _nuGetPackageService.UpdateAsync(nuGetProjects, packages, shouldThrow, token);
+		}
+
+		public async Task UninstallPackagesAsync(IEnumerable<string> projects, IEnumerable<string> packageIds, UninstallPackagesOptions options, bool shouldThrow, CancellationToken token)
+		{
+			var nuGetProjects = new List<NuGetProject>();
+			foreach (var item in projects)
+			{
+				var nuGetProject = await SolutionManager.GetNuGetProjectAsync(item);
+
+				nuGetProjects.Add(nuGetProject);
+			}
+
+			if (packageIds.Any(t => t.Equals("NETStandard.Library")) == true)
+			{
+				packageIds = packageIds.Where(t => !t.Equals("NETStandard.Library"));
+			}
+
+			await _nuGetPackageService.UninstallAsync(nuGetProjects, packageIds, options.RemoveDependencies, options.FocusRemove, shouldThrow, token);
 		}
 
 		private void NuGetPackageUninstalling(string packageId)
@@ -240,5 +111,7 @@ namespace NuGetPackageManagerUI.Services
 		{
 			PackageInstalled?.Invoke(packageId, version);
 		}
+
+
 	}
 }

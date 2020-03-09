@@ -1,33 +1,121 @@
-﻿using System;
-using TinyIoC;
+﻿using Microsoft.Extensions.DependencyInjection;
+using NuGet.PackageManagement;
+using NuGetPackageManagerUI.Services;
+using NuGetPackageManagerUI.Services.NuGets;
+using NuGetPackageManagerUI.Services.NuGets.Projects;
+using NuGetPackageManagerUI.Utils;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace NuGetPackageManagerUI
 {
-	public class ServiceLocator
+	public static class ServiceLocator
 	{
-		public static void RegisterService<TService>() where TService : class
+		public static IServiceProvider ServiceProvider { get; private set; }
+
+		static ServiceLocator()
 		{
-			TinyIoCContainer.Current.Register<TService>();
+			var serviceCollection = new ServiceCollection();
+			ConfigureServices(serviceCollection);
+
+			ServiceProvider = serviceCollection.BuildServiceProvider();
 		}
 
-		public static void RegisterService<TService, TImpl>() where TService : class where TImpl : class, TService
+		public static void Initial() { }
+
+		private static void ConfigureServices(IServiceCollection services)
 		{
-			TinyIoCContainer.Current.Register<TService, TImpl>(); 
+			var nuGetLogger = new DefaultNuGetLogger();
+			services.AddSingleton<global::NuGet.Common.ILogger>(nuGetLogger);
+
+			ILogger appLogger = new SimpleLogger();
+			services.AddSingleton<ILogger>(appLogger);
+
+			nuGetLogger.OnLog += (level, message) =>
+			{
+				appLogger.Log(message);
+			};
+
+			services.AddTransient(typeof(Lazy<>), typeof(Lazier<>));
+
+			ScanAndRegisterServies(services);
+
+			// services 
+			//services.AddSingleton<ISolutionDiretoryManager, SolutionDiretoryManager>();
+			//services.AddSingleton<IProjectService, ProjectService>();
+			//services.AddSingleton<ISolutionManager, MySolutionManager>();
+			//services.AddTransient<NuGetProjectFactory>();
+			//services.AddTransient<INuGetProjectProvider,>();
+			//services.AddSingleton<ISolutionDiretoryManager, SolutionDiretoryManager>();
+			//services.AddSingleton<ISolutionDiretoryManager, SolutionDiretoryManager>();
+
+			// viewmodel
+			services.AddScoped<MainWindowViewModel>();
 		}
 
-		public static void RegisterService<TService>(Func<TService> impl) where TService : class
+		private static void ScanAndRegisterServies(IServiceCollection services)
 		{
-			TinyIoCContainer.Current.Register((_, __) => impl());
+			var allTypes = typeof(ServiceLocator).Assembly.GetTypes().Where(t => t.IsClass && !t.IsInterface && !t.IsAbstract);
+			foreach (var type in allTypes)
+			{
+				var interfaces = type.GetInterfaces();
+				if (interfaces.Contains(typeof(ISingletonService)))
+				{
+					if (type.GetInterfaces().Length == 1)
+					{
+						services.AddSingleton(type);
+					}
+					else
+						foreach (var @interfaceType in type.GetInterfaces().Where(t => t != typeof(ISingletonService)))
+						{
+							services.AddSingleton(@interfaceType, type);
+						}
+				}
+				else if (interfaces.Contains(typeof(IScopedService)))
+				{
+					if (type.GetInterfaces().Length == 1)
+					{
+						services.AddScoped(type);
+					}
+					else
+						foreach (var @interfaceType in type.GetInterfaces().Where(t => t != typeof(IScopedService)))
+						{
+							services.AddScoped(@interfaceType, type);
+						}
+				}
+				else if (interfaces.Contains(typeof(ITransientService)))
+				{
+					if (type.GetInterfaces().Length == 1)
+					{
+						services.AddTransient(type);
+					}
+					else
+						foreach (var @interfaceType in type.GetInterfaces().Where(t => t != typeof(ITransientService)))
+						{
+							services.AddTransient(@interfaceType, type);
+						}
+				}
+			}
 		}
 
-		public static void RegisterService<TService>(TService instance) where TService : class
+		public static T GetService<T>() where T : class
 		{
-			TinyIoCContainer.Current.Register(instance);
+			return ServiceProvider.GetService<T>();
 		}
 
-		public static TService GetService<TService>() where TService : class
+		public static IEnumerable<T> GetServices<T>() where T : class
 		{
-			return TinyIoCContainer.Current.Resolve<TService>();
+			return ServiceProvider.GetServices<T>();
+		}
+
+	}
+
+	internal class Lazier<T> : Lazy<T> where T : class
+	{
+		public Lazier(IServiceProvider provider)
+			: base(() => provider.GetRequiredService<T>())
+		{
 		}
 	}
 }

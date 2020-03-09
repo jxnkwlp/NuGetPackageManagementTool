@@ -1,8 +1,4 @@
-﻿using NuGetPackageManagerUI.NuGet;
-using NuGetPackageManagerUI.Services;
-using NuGetPackageManagerUI.Utils;
-using System.Windows;
-using System;
+﻿using System.Windows;
 
 namespace NuGetPackageManagerUI
 {
@@ -13,19 +9,15 @@ namespace NuGetPackageManagerUI
 	{
 		public App()
 		{
-			var nuGetLogger = new DefaultNuGetLogger();
-			ServiceLocator.RegisterService<global::NuGet.Common.ILogger>(nuGetLogger);
-
-			ServiceLocator.RegisterService(new ProjectService());
-
-			ILogger appLogger = new SimpleLogger();
-			ServiceLocator.RegisterService<ILogger>(appLogger);
-
-
-			nuGetLogger.OnLog += (level, message) =>
-			{
-				appLogger.Log(message);
-			};
+			DispatcherHelper.Initialize();
+			ServiceLocator.Initial();
 		}
+
+		protected override void OnStartup(StartupEventArgs e)
+		{
+			base.OnStartup(e);
+		}
+
+
 	}
 }

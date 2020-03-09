@@ -28,7 +28,7 @@
 
 		<TextBox Grid.Column="0" TextWrapping="NoWrap" MinWidth="10" FontSize="14" Text="{Binding Id}" Style="{DynamicResource SelectableTextBlockStyle}" VerticalAlignment="Top" Margin="10" Height="auto" />
 
-		<Expander Grid.Column="1" Header="Show Used" ExpandDirection="Down" MinWidth="100" MaxWidth="450" FontSize="12" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,10,0,0" IsExpanded="{Binding ShowUsage, Mode=TwoWay}" Visibility="{Binding EnableUsage, Converter={StaticResource BooleanToVisibilityConverter}}" Padding="4" Height="auto">
+		<Expander Grid.Column="1" Header="Show Installed" ExpandDirection="Down" MinWidth="100" MaxWidth="450" FontSize="12" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="0,10,0,0" IsExpanded="{Binding ShowUsage, Mode=TwoWay}" Visibility="{Binding EnableUsage, Converter={StaticResource BooleanToVisibilityConverter}}" Padding="4" Height="auto">
 			<TextBlock TextWrapping="Wrap" Text="{Binding UsageText}" />
 		</Expander>
 

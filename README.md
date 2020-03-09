@@ -1,5 +1,5 @@
 # NuGet Package Manager UI
-An NuGet package manager tools for C# project(s).
+A NuGet package manager tools for C# project(s).
 
 ## TODO
 - [x] .Net framework project

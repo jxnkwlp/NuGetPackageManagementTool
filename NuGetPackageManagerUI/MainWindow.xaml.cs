@@ -126,10 +126,7 @@ namespace NuGetPackageManagerUI
 		//	}));
 		//}
 
-		private static Task<IEnumerable<PackageModel>> GetPackagesAsync(IEnumerable<ProjectModel> projects)
-		{
-			return Task.Run(() => projects.SelectMany(t => ProjectService.GetProjectPackages(t.FullPath, true)));
-		}
+		 
 
 		//private void OnInstall()
 		//{

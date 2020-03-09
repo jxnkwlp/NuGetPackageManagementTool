@@ -22,10 +22,10 @@
 			<CheckBox  IsChecked="{Binding Selected, Mode=TwoWay}" Margin="0" />
 			<TextBlock Text="{Binding Id}" MinWidth="20" TextWrapping="WrapWithOverflow" />
 
-			<Border CornerRadius="4" ToolTip="New version available" Background="DarkOrange" Padding="4,0" Margin="4,0,0,0" Visibility="{Binding CanUpdate, IsAsync=True, Converter={StaticResource BooleanToVisibilityConverter}}">
+			<Border CornerRadius="4" ToolTip="New version available" Background="DarkOrange" Padding="4,0" Margin="4,0,0,0" Visibility="{Binding CanUpdate,  IsAsync=True, Converter={StaticResource BooleanToVisibilityConverter}}">
 				<TextBlock Text="U" Foreground="White"/>
 			</Border>
-			<Border CornerRadius="4" ToolTip="There are different versions" Background="DarkGoldenrod" Padding="4,0" Margin="4,0,0,0" Visibility="{Binding CanConsolidate, IsAsync=True, Converter={StaticResource BooleanToVisibilityConverter}}">
+			<Border CornerRadius="4" ToolTip="There are different versions" Background="DarkGoldenrod" Padding="4,0" Margin="4,0,0,0" Visibility="{Binding CanConsolidate,  IsAsync=True, Converter={StaticResource BooleanToVisibilityConverter}}">
 				<TextBlock Text="C" Foreground="White"/>
 			</Border>
 		</StackPanel>
