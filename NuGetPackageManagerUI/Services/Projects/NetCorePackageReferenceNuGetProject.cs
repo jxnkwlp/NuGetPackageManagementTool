@@ -65,7 +65,7 @@ namespace NuGetPackageManagerUI.Services.Projects
 				throw new InvalidOperationException(string.Format("ProjectNotLoaded_RestoreFailed", ProjectName));
 			}
 
-			return NoOpRestoreUtilities.GetProjectCacheFilePath(cacheRoot: spec.RestoreMetadata.OutputPath);
+			return NoOpRestoreUtilities.GetProjectCacheFilePath(cacheRoot: spec.RestoreMetadata.OutputPath, projectPath: spec.RestoreMetadata.ProjectPath);
 		}
 
 		public override async Task<string> GetAssetsFilePathOrNullAsync()
